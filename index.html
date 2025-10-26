@@ -529,7 +529,7 @@
             }
 
             updateAI() {
-                if (this.type === 'food') return;
+                if (this.type === 'food' || !player) return;
 
                 // Chercher le joueur
                 const dx = player.x - this.x;
@@ -732,6 +732,7 @@
         let mouseX = 0;
         let mouseY = 0;
         let keys = {};
+        let animationId = null;
 
         // Système d'améliorations
         const upgrades = {
@@ -775,8 +776,13 @@
             cells = [];
             particles = [];
 
+            // Réinitialiser les upgrades
+            Object.keys(upgrades).forEach(key => {
+                upgrades[key].level = 0;
+            });
+
             // Créer nourriture
-            for (let i = 0; i < 150; i++) {
+            for (let i = 0; i < 100; i++) {
                 cells.push(new Cell(
                     Math.random() * WORLD_SIZE,
                     Math.random() * WORLD_SIZE,
@@ -787,7 +793,7 @@
             }
 
             // Créer proies
-            for (let i = 0; i < 30; i++) {
+            for (let i = 0; i < 25; i++) {
                 cells.push(new Cell(
                     Math.random() * WORLD_SIZE,
                     Math.random() * WORLD_SIZE,
@@ -798,11 +804,11 @@
             }
 
             // Créer prédateurs
-            for (let i = 0; i < 15; i++) {
+            for (let i = 0; i < 10; i++) {
                 cells.push(new Cell(
                     Math.random() * WORLD_SIZE,
                     Math.random() * WORLD_SIZE,
-                    20 + Math.random() * 20,
+                    20 + Math.random() * 15,
                     '#ef4444',
                     'predator'
                 ));
@@ -843,7 +849,9 @@
 
         // Boucle de jeu
         function gameLoop() {
-            if (!gameStarted || gamePaused || gameOverState) return;
+            if (!gameStarted || gameOverState) {
+                return;
+            }
 
             // Clear
             ctx.fillStyle = 'rgba(2, 10, 19, 0.3)';
@@ -852,89 +860,104 @@
             // Background pattern
             drawBackground();
 
-            // Update camera
-            camera.smoothFollow(player);
+            if (!gamePaused) {
+                // Update camera
+                camera.smoothFollow(player);
 
-            // Update player
-            if (keys['ArrowUp'] || keys['w'] || keys['W']) {
-                player.moveTo(player.x, player.y - 100);
-            }
-            if (keys['ArrowDown'] || keys['s'] || keys['S']) {
-                player.moveTo(player.x, player.y + 100);
-            }
-            if (keys['ArrowLeft'] || keys['a'] || keys['A']) {
-                player.moveTo(player.x - 100, player.y);
-            }
-            if (keys['ArrowRight'] || keys['d'] || keys['D']) {
-                player.moveTo(player.x + 100, player.y);
-            }
+                // Update player
+                if (keys['ArrowUp'] || keys['w'] || keys['W']) {
+                    player.moveTo(player.x, player.y - 100);
+                }
+                if (keys['ArrowDown'] || keys['s'] || keys['S']) {
+                    player.moveTo(player.x, player.y + 100);
+                }
+                if (keys['ArrowLeft'] || keys['a'] || keys['A']) {
+                    player.moveTo(player.x - 100, player.y);
+                }
+                if (keys['ArrowRight'] || keys['d'] || keys['D']) {
+                    player.moveTo(player.x + 100, player.y);
+                }
 
-            player.update();
+                player.update();
 
-            // Update cells
-            cells.forEach(cell => cell.update());
+                // Update cells
+                cells.forEach(cell => cell.update());
 
-            // Vérifier collisions
-            cells = cells.filter(cell => {
-                if (player.collidesWith(cell)) {
-                    if (cell.type === 'food' || (cell.size < player.size * 0.8)) {
-                        player.eat(cell);
-                        return false;
-                    } else if (cell.size > player.size * 1.2 && cell.type === 'predator') {
-                        if (player.takeDamage()) {
-                            gameOver();
+                // Vérifier collisions
+                cells = cells.filter(cell => {
+                    if (player.collidesWith(cell)) {
+                        if (cell.type === 'food' || (cell.size < player.size * 0.8)) {
+                            player.eat(cell);
+                            return false;
+                        } else if (cell.size > player.size * 1.2 && cell.type === 'predator') {
+                            if (player.takeDamage()) {
+                                gameOver();
+                            }
                         }
                     }
+                    return true;
+                });
+
+                // Spawn nourriture périodiquement
+                if (Math.random() < 0.02) {
+                    spawnFood();
                 }
-                return true;
-            });
 
-            // Spawn nourriture périodiquement
-            if (Math.random() < 0.02) {
-                spawnFood();
+                // Spawn nouvelles créatures avec limite totale
+                const totalCells = cells.length;
+                if (totalCells < 250) {
+                    if (Math.random() < 0.005 && cells.filter(c => c.type === 'prey').length < 40) {
+                        cells.push(new Cell(
+                            Math.random() * WORLD_SIZE,
+                            Math.random() * WORLD_SIZE,
+                            8 + Math.random() * 10,
+                            '#4ade80',
+                            'prey'
+                        ));
+                    }
+
+                    if (Math.random() < 0.002 && cells.filter(c => c.type === 'predator').length < 20) {
+                        cells.push(new Cell(
+                            Math.random() * WORLD_SIZE,
+                            Math.random() * WORLD_SIZE,
+                            player.size * 1.5 + Math.random() * 20,
+                            '#ef4444',
+                            'predator'
+                        ));
+                    }
+                }
+
+                // Update and filter particles
+                particles = particles.filter(p => {
+                    p.update();
+                    return !p.isDead();
+                });
+
+                // Limiter le nombre de particules
+                if (particles.length > 200) {
+                    particles = particles.slice(-200);
+                }
             }
 
-            // Spawn nouvelles créatures
-            if (Math.random() < 0.005 && cells.filter(c => c.type === 'prey').length < 40) {
-                cells.push(new Cell(
-                    Math.random() * WORLD_SIZE,
-                    Math.random() * WORLD_SIZE,
-                    8 + Math.random() * 10,
-                    '#4ade80',
-                    'prey'
-                ));
-            }
-
-            if (Math.random() < 0.002 && cells.filter(c => c.type === 'predator').length < 20) {
-                cells.push(new Cell(
-                    Math.random() * WORLD_SIZE,
-                    Math.random() * WORLD_SIZE,
-                    player.size * 1.5 + Math.random() * 20,
-                    '#ef4444',
-                    'predator'
-                ));
-            }
-
-            // Draw cells
+            // Draw cells (même en pause)
             cells.forEach(cell => cell.draw());
 
             // Draw player
             player.draw();
 
-            // Update and draw particles
-            particles = particles.filter(p => {
-                p.update();
-                p.draw();
-                return !p.isDead();
-            });
+            // Draw particles
+            particles.forEach(p => p.draw());
 
             // Draw cursor indicator
-            drawCursor();
+            if (!gamePaused) {
+                drawCursor();
+            }
 
             // Update minimap
             updateMinimap();
 
-            requestAnimationFrame(gameLoop);
+            // Continue la boucle
+            animationId = requestAnimationFrame(gameLoop);
         }
 
         // Dessiner le fond avec motif
@@ -982,6 +1005,8 @@
 
         // Mettre à jour la minimap
         function updateMinimap() {
+            if (!player) return;
+
             const scale = minimap.width / WORLD_SIZE;
 
             minimapCtx.fillStyle = 'rgba(0, 0, 0, 0.5)';
@@ -1014,6 +1039,8 @@
 
         // UI Updates
         function updateUI() {
+            if (!player) return;
+
             document.getElementById('sizeValue').textContent = Math.floor(player.size);
             document.getElementById('scoreValue').textContent = player.score;
             document.getElementById('levelValue').textContent = player.level;
@@ -1028,6 +1055,8 @@
 
         // Menu évolution
         function openEvolutionMenu() {
+            if (!player) return;
+
             gamePaused = true;
             const menu = document.getElementById('evolutionMenu');
             menu.classList.add('active');
@@ -1063,6 +1092,8 @@
         }
 
         function purchaseUpgrade(key) {
+            if (!player) return;
+
             const upgrade = upgrades[key];
             if (player.evolutionPoints >= upgrade.cost && upgrade.level < upgrade.maxLevel) {
                 player.evolutionPoints -= upgrade.cost;
@@ -1086,6 +1117,8 @@
 
         // Game Over
         function gameOver() {
+            if (!player) return;
+
             gameOverState = true;
             const screen = document.getElementById('gameOver');
             screen.classList.add('active');
@@ -1098,7 +1131,15 @@
 
         function restartGame() {
             gameOverState = false;
+            gamePaused = false;
             document.getElementById('gameOver').classList.remove('active');
+
+            // Annuler l'ancienne boucle si elle existe
+            if (animationId) {
+                cancelAnimationFrame(animationId);
+                animationId = null;
+            }
+
             init();
             gameLoop();
         }
@@ -1106,6 +1147,13 @@
         function startGame() {
             document.getElementById('startScreen').classList.add('hidden');
             gameStarted = true;
+
+            // Annuler l'ancienne boucle si elle existe
+            if (animationId) {
+                cancelAnimationFrame(animationId);
+                animationId = null;
+            }
+
             init();
             gameLoop();
         }
@@ -1128,7 +1176,7 @@
             keys[e.key] = true;
 
             if (e.key === 'e' || e.key === 'E') {
-                if (!gamePaused && player.evolutionPoints > 0) {
+                if (gameStarted && !gamePaused && player && player.evolutionPoints > 0) {
                     openEvolutionMenu();
                 }
             }
@@ -1138,7 +1186,6 @@
                     closeEvolutionMenu();
                 } else {
                     gamePaused = !gamePaused;
-                    if (!gamePaused) gameLoop();
                 }
             }
         });
@@ -1148,6 +1195,7 @@
         });
 
         // Démarrage automatique de l'animation de fond
+        let backgroundAnimationId = null;
         (function backgroundAnimation() {
             if (!gameStarted) {
                 ctx.fillStyle = 'rgba(2, 10, 19, 0.1)';
@@ -1163,10 +1211,13 @@
                     ctx.arc(x, y, size, 0, Math.PI * 2);
                     ctx.fill();
                 }
-            }
 
-            if (!gameStarted) {
-                requestAnimationFrame(backgroundAnimation);
+                backgroundAnimationId = requestAnimationFrame(backgroundAnimation);
+            } else {
+                if (backgroundAnimationId) {
+                    cancelAnimationFrame(backgroundAnimationId);
+                    backgroundAnimationId = null;
+                }
             }
         })();
     </script>
